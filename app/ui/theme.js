@@ -8,7 +8,14 @@
     "--semi-color-bg-1", "--semi-color-input-DefaultBg", "--semi-color-disabled-text",
     "--semi-color-progress-defaultBg", "--semi-color-success-light-default",
     "--semi-color-danger-light-default", "--semi-color-warning-light-default",
-    "--semi-color-focus-border",
+    "--semi-color-focus-border", "--semi-color-bg-2", "--semi-color-overlay-bg",
+    "--semi-color-overlay-CustomAnti", "--semi-color-border-modal", "--font-family-regular",
+    "--semi-border-radius-custom-button-default", "--semi-border-radius-custom-button-small",
+    "--semi-color-primary-active", "--semi-color-primary-light-active", "--semi-color-tertiary",
+    "--semi-color-tertiary-hover", "--semi-color-tertiary-active", "--semi-color-fill-2", "--semi-white",
+    "--semi-border-radius-small", "--semi-border-radius-large", "--semi-shadow-elevated",
+    "--semi-transition_duration-none", "--semi-transition_function-easeIn",
+    "--semi-transition_delay-none", "--semi-transform_scale-none",
   ];
 
   const root = document.documentElement;

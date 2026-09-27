@@ -7,9 +7,10 @@
   <title>Ryzen 功耗控制</title>
   <script src="/app/ryzen-power-control/theme.js"></script>
   <link rel="stylesheet" href="/app/ryzen-power-control/style.css">
+  <link rel="stylesheet" href="/app/ryzen-power-control/semi-modal.css">
 </head>
 <body>
-  <main id="app-shell" class="app-shell" hidden>
+  <main id="app-shell" class="app-shell">
     <header class="app-header">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true"><img src="/app/ryzen-power-control/images/icon_64.png" alt=""></div>
@@ -202,33 +203,56 @@
       </span>
     </footer>
   </main>
-  <dialog id="cpu-gate" class="cpu-gate" aria-labelledby="cpu-gate-title">
-    <div class="cpu-gate-content">
-      <h2 id="cpu-gate-title">正在检查处理器</h2>
-      <p id="cpu-gate-message" class="cpu-gate-message">正在读取 CPU 支持信息…</p>
-      <p id="cpu-gate-series" class="cpu-gate-series" hidden></p>
-      <p id="cpu-gate-power" class="cpu-gate-power" hidden></p>
-      <div id="cpu-gate-support" class="cpu-gate-support" hidden>
-        <strong>支持范围：</strong>
-        <ul>
-          <li>Ryzen 2000 系列 APU / Mobile</li>
-          <li>Ryzen 3000 系列 APU / Mobile、Athlon 3000 Mobile</li>
-          <li>Ryzen 4000 系列 APU / Mobile</li>
-          <li>Ryzen 5000 系列 APU / Mobile</li>
-          <li>Ryzen 6000 系列 Mobile</li>
-          <li>Ryzen 7020 / 7035 / 7040 / 7045 系列</li>
-          <li>Ryzen 8040 系列</li>
-          <li>Ryzen AI 300 / AI Max 300 系列</li>
-          <li>Ryzen 9000HX 系列</li>
-          <li>Ryzen Z1 / Z2 系列及 Steam Deck 等部分定制 APU</li>
-        </ul>
-        <p class="cpu-gate-feedback"><a class="btn feedback-button" href="https://github.com/LANMIN-X/RyzenAdj-for-fnOS/issues" target="_blank" rel="noopener noreferrer">反馈问题</a></p>
+  <dialog id="cpu-gate" class="cpu-gate" aria-labelledby="cpu-gate-title" tabindex="-1">
+    <div class="semi-portal" style="z-index: 1000;">
+      <div class="semi-modal-confirm">
+      <div class="semi-modal-mask"></div>
+      <div role="none" class="semi-modal-wrap semi-modal-wrap-center">
+        <div class="semi-modal semi-modal-centered semi-modal-small">
+          <div role="dialog" aria-modal="true" aria-labelledby="cpu-gate-title" aria-describedby="cpu-gate-body" class="semi-modal-content">
+            <div class="semi-modal-header">
+              <h2 class="semi-typography semi-modal-title semi-typography-primary semi-typography-normal semi-typography-h5" id="cpu-gate-title"><span class="semi-modal-confirm-title-text">正在检查处理器</span></h2>
+              <button id="cpu-gate-close" aria-label="close" class="semi-button semi-button-tertiary semi-button-size-small semi-button-borderless semi-modal-close semi-button-with-icon semi-button-with-icon-only" type="button">
+                <span class="semi-button-content"><span role="img" aria-label="close" class="semi-icon semi-icon-default semi-icon-close"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" focusable="false" aria-hidden="true"><path d="M17.66 19.78a1.5 1.5 0 0 0 2.12-2.12L14.12 12l5.66-5.66a1.5 1.5 0 0 0-2.12-2.12L12 9.88 6.34 4.22a1.5 1.5 0 1 0-2.12 2.12L9.88 12l-5.66 5.66a1.5 1.5 0 0 0 2.12 2.12L12 14.12l5.66 5.66Z" fill="currentColor"></path></svg></span></span>
+              </button>
+            </div>
+            <div class="semi-modal-body" id="cpu-gate-body">
+              <div class="semi-modal-confirm-content">
+                <p id="cpu-gate-message" class="cpu-gate-message">正在读取 CPU 支持信息…</p>
+                <p id="cpu-gate-series" class="cpu-gate-series" hidden></p>
+                <p id="cpu-gate-power" class="cpu-gate-power" hidden></p>
+                <div id="cpu-gate-support" class="cpu-gate-support" hidden>
+                  <strong>支持范围：</strong>
+                  <ul>
+                    <li>Ryzen 2000 系列 APU / Mobile</li>
+                    <li>Ryzen 3000 系列 APU / Mobile、Athlon 3000 Mobile</li>
+                    <li>Ryzen 4000 系列 APU / Mobile</li>
+                    <li>Ryzen 5000 系列 APU / Mobile</li>
+                    <li>Ryzen 6000 系列 Mobile</li>
+                    <li>Ryzen 7020 / 7035 / 7040 / 7045 系列</li>
+                    <li>Ryzen 8040 系列</li>
+                    <li>Ryzen AI 300 / AI Max 300 系列</li>
+                    <li>Ryzen 9000HX 系列</li>
+                    <li>Ryzen Z1 / Z2 系列及 Steam Deck 等部分定制 APU</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div class="semi-modal-footer">
+              <div id="cpu-gate-actions" class="cpu-gate-actions" hidden>
+                <button id="cpu-gate-enter" class="semi-button semi-button-primary" type="button"><span class="semi-button-content">进入应用</span></button>
+              </div>
+              <div id="cpu-gate-unsupported-actions" class="cpu-gate-actions" hidden>
+                <button id="cpu-gate-cancel" aria-label="cancel" class="semi-button semi-button-tertiary semi-button-outline" type="button"><span class="semi-button-content">取消</span></button>
+                <a class="semi-button semi-button-primary" href="https://github.com/LANMIN-X/RyzenAdj-for-fnOS/issues" target="_blank" rel="noopener noreferrer"><span class="semi-button-content">反馈问题</span></a>
+              </div>
+              <div id="cpu-gate-retry-row" class="cpu-gate-actions" hidden>
+                <button id="cpu-gate-retry" class="semi-button semi-button-primary" type="button"><span class="semi-button-content">重新检测</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div id="cpu-gate-actions" class="cpu-gate-actions" hidden>
-        <button id="cpu-gate-enter" class="btn btn-primary" type="button">进入应用</button>
-      </div>
-      <div id="cpu-gate-retry-row" class="cpu-gate-actions" hidden>
-        <button id="cpu-gate-retry" class="btn btn-primary" type="button">重新检测</button>
       </div>
     </div>
   </dialog>

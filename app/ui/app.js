@@ -61,8 +61,15 @@ function showCpuChecking() {
   $("cpu-gate-power").hidden = true;
   $("cpu-gate-support").hidden = true;
   $("cpu-gate-actions").hidden = true;
+  $("cpu-gate-unsupported-actions").hidden = true;
   $("cpu-gate-retry-row").hidden = true;
-  if (!$("cpu-gate").open) $("cpu-gate").showModal();
+  openCpuGate();
+}
+
+function openCpuGate() {
+  const gate = $("cpu-gate");
+  if (!gate.open) gate.showModal();
+  gate.focus();
 }
 
 function prepareCpuGate(data) {
@@ -92,6 +99,7 @@ function prepareCpuGate(data) {
     $("cpu-gate-power").hidden = false;
     $("cpu-gate-support").hidden = true;
     $("cpu-gate-actions").hidden = false;
+    $("cpu-gate-unsupported-actions").hidden = true;
     $("cpu-gate-retry-row").hidden = true;
   } else {
     $("cpu-gate-title").textContent = "当前处理器暂不支持";
@@ -105,10 +113,11 @@ function prepareCpuGate(data) {
     $("cpu-gate-power").hidden = true;
     $("cpu-gate-support").hidden = false;
     $("cpu-gate-actions").hidden = true;
+    $("cpu-gate-unsupported-actions").hidden = false;
     $("cpu-gate-retry-row").hidden = true;
   }
   cpuGateBlocked = true;
-  if (!$("cpu-gate").open) $("cpu-gate").showModal();
+  openCpuGate();
   return false;
 }
 
@@ -120,8 +129,9 @@ function showCpuCheckError(error) {
   $("cpu-gate-power").hidden = true;
   $("cpu-gate-support").hidden = true;
   $("cpu-gate-actions").hidden = true;
+  $("cpu-gate-unsupported-actions").hidden = true;
   $("cpu-gate-retry-row").hidden = false;
-  if (!$("cpu-gate").open) $("cpu-gate").showModal();
+  openCpuGate();
 }
 
 function setTestStatus(test) {
@@ -224,7 +234,7 @@ async function refresh() {
       $("adjust-description").textContent = data.separate_limits
         ? `分别设置 ${supportedLimitKeys.map((key) => LIMIT_LABELS[key]).join("、")}。`
         : `同时应用到 ${supportedLimitKeys.map((key) => LIMIT_LABELS[key]).join("、")}。`;
-      const sharedWatts = data.target_watts ?? Math.round(targetLimits[supportedLimitKeys[0]]);
+      const sharedWatts = data.target_watts ?? Math.round(targetLimits[supportedLimitKeys[0]] ?? data.limits.fast);
       $("watts").value = String(sharedWatts);
       $("watts-slider").value = String(sharedWatts);
       for (const key of LIMIT_KEYS) {
@@ -273,6 +283,17 @@ $("cpu-gate-enter").addEventListener("click", () => {
   $("cpu-gate").close();
   refresh();
 });
+
+function forceEnterCpuGate() {
+  cpuGateBlocked = false;
+  appReady = true;
+  $("app-shell").hidden = false;
+  $("cpu-gate").close();
+  refresh();
+}
+
+$("cpu-gate-cancel").addEventListener("click", forceEnterCpuGate);
+$("cpu-gate-close").addEventListener("click", forceEnterCpuGate);
 
 $("cpu-gate-retry").addEventListener("click", () => {
   cpuGateBlocked = false;
