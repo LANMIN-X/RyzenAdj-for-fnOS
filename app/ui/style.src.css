@@ -153,8 +153,7 @@ h2 { margin: 0; color: var(--text); font-size: 12px; font-weight: 600; }
 .test-hint { margin: 0; line-height: 1.4; }
 .page-footer { gap: 12px; margin-top: 8px; padding: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .footer-meta { display: flex; align-items: center; gap: 10px; }
-.feedback-link { color: var(--primary); text-decoration: none; }
-.feedback-link:hover { text-decoration: underline; }
+.feedback-button { min-height: 30px; padding-inline: 10px; text-decoration: none; }
 .nowrap { white-space: nowrap; }
 .power-meter-slot { position: relative; }
 .cpu-gate { width: min(480px, calc(100vw - 32px)); max-height: min(82vh, 720px); padding: 0; overflow: hidden; border: 1px solid var(--semi-color-border, var(--line)); border-radius: 8px; color: var(--text); background: var(--surface); box-shadow: 0 12px 36px rgba(0, 0, 0, .2); }

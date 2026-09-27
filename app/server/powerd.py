@@ -17,7 +17,7 @@ from pathlib import Path
 
 
 APP = "ryzen-power-control"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 MIN_WATTS = 10
 MAX_WATTS = 200
 MAX_TEST_SECONDS = 120
