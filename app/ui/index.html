@@ -198,8 +198,9 @@
     <footer class="page-footer">
       <span>功耗数据由 AMD SMU 提供，读数会随负载实时变化。</span>
       <span class="footer-meta">
+        <button id="view-logs" class="btn feedback-button" type="button">查看日志</button>
         <a class="btn feedback-button" href="https://github.com/LANMIN-X/RyzenAdj-for-fnOS/issues" target="_blank" rel="noopener noreferrer">反馈问题</a>
-        <span id="app-version"></span>
+        <span><a id="app-version" class="app-version-link"></a><span id="update-indicator" class="version-update-dot" title="发现新版本" aria-label="发现新版本" hidden></span></span>
       </span>
     </footer>
   </main>
@@ -253,6 +254,38 @@
           </div>
         </div>
       </div>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="logs-dialog" class="logs-dialog" aria-labelledby="logs-title">
+    <div class="semi-portal" style="z-index: 1000;">
+      <div class="semi-modal-confirm">
+        <div class="semi-modal-mask"></div>
+        <div role="none" class="semi-modal-wrap semi-modal-wrap-center">
+          <div class="semi-modal semi-modal-centered semi-modal-wide">
+            <div role="dialog" aria-modal="true" aria-labelledby="logs-title" class="semi-modal-content">
+              <div class="semi-modal-header">
+                <h2 class="semi-typography semi-modal-title semi-typography-h5" id="logs-title">运行日志</h2>
+                <button id="close-logs" aria-label="关闭" class="semi-button semi-button-tertiary semi-button-size-small semi-button-borderless semi-button-with-icon-only" type="button">
+                  <span class="semi-button-content"><span class="semi-icon semi-icon-default">×</span></span>
+                </button>
+              </div>
+              <div class="semi-modal-body logs-body">
+                <p class="logs-note">仅保留本次 RyzenAdj 日志；应用重启后会清空。</p>
+                <section class="log-section">
+                  <h3>本次 RyzenAdj 日志</h3>
+                  <pre id="ryzenadj-log" class="log-output"></pre>
+                </section>
+              </div>
+              <div class="semi-modal-footer logs-footer">
+                <div class="logs-footer-actions">
+                  <button id="download-logs" class="semi-button semi-button-tertiary semi-button-outline" type="button" disabled><span class="semi-button-content">下载日志</span></button>
+                  <button id="close-logs-footer" class="semi-button semi-button-primary" type="button"><span class="semi-button-content">关闭</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </dialog>

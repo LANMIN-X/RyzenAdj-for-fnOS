@@ -6,7 +6,9 @@ let targetLimits = null;
 let noticeHoldUntil = 0;
 let appReady = false;
 let cpuGateBlocked = false;
+let versionCheckStarted = false;
 let detectedCpuFamily = "Unknown";
+let currentRyzenadjLog = "";
 const LIMIT_KEYS = ["stapm", "fast", "slow"];
 const LIMIT_LABELS = { stapm: "STAPM", fast: "PPT 瞬时", slow: "PPT 慢速" };
 let supportedLimitKeys = [];
@@ -14,6 +16,46 @@ const CPU_FAMILY_KEY = "ryzen-power-control.cpu-family";
 
 function watts(value) {
   return Number(value).toFixed(1);
+}
+
+function isNewerVersion(latest, current) {
+  const pattern = /^\d+(?:\.\d+){2}$/;
+  if (!pattern.test(latest) || !pattern.test(current)) return false;
+  const latestParts = latest.split(".").map(Number);
+  const currentParts = current.split(".").map(Number);
+  for (let i = 0; i < latestParts.length; i += 1) {
+    if (latestParts[i] !== currentParts[i]) return latestParts[i] > currentParts[i];
+  }
+  return false;
+}
+
+async function checkForNewVersion(currentVersion) {
+  try {
+    const response = await fetch(
+      `https://raw.githubusercontent.com/LANMIN-X/RyzenAdj-for-fnOS/main/LATEST_VERSION?t=${Date.now()}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) throw new Error(`版本文件请求失败 (${response.status})`);
+    const latestVersion = (await response.text()).trim();
+    const updateAvailable = isNewerVersion(latestVersion, currentVersion);
+    const versionLink = $("app-version");
+    if (updateAvailable) {
+      versionLink.href = "https://github.com/LANMIN-X/RyzenAdj-for-fnOS/releases";
+      versionLink.target = "_blank";
+      versionLink.rel = "noopener noreferrer";
+    } else {
+      versionLink.removeAttribute("href");
+      versionLink.removeAttribute("target");
+      versionLink.removeAttribute("rel");
+    }
+    $("update-indicator").hidden = !updateAvailable;
+  } catch (error) {
+    $("app-version").removeAttribute("href");
+    $("app-version").removeAttribute("target");
+    $("app-version").removeAttribute("rel");
+    $("update-indicator").hidden = true;
+    console.warn("检查应用更新失败", error);
+  }
 }
 
 function showNotice(message, error = false, success = false) {
@@ -157,6 +199,10 @@ async function refresh() {
   refreshing = true;
   try {
     const data = await request("/api/status");
+    if (!versionCheckStarted) {
+      versionCheckStarted = true;
+      checkForNewVersion(data.version);
+    }
     if (!appReady && !prepareCpuGate(data)) return;
     $("machine").textContent = `内核 RyzenAdj ${data.ryzenadj_version}`;
     $("app-version").textContent = `应用版本 v${data.version}`;
@@ -302,6 +348,38 @@ $("cpu-gate-retry").addEventListener("click", () => {
 });
 
 $("cpu-gate").addEventListener("cancel", (event) => event.preventDefault());
+
+async function showLogs() {
+  const dialog = $("logs-dialog");
+  dialog.showModal();
+  currentRyzenadjLog = "";
+  $("download-logs").disabled = true;
+  $("ryzenadj-log").textContent = "正在读取日志…";
+  try {
+    const logs = await request("/api/logs");
+    currentRyzenadjLog = logs.ryzenadj || "";
+    $("ryzenadj-log").textContent = currentRyzenadjLog || "本次运行暂无 RyzenAdj 日志。";
+    $("download-logs").disabled = !currentRyzenadjLog;
+  } catch (error) {
+    $("ryzenadj-log").textContent = `读取日志失败：${error.message}`;
+  }
+}
+
+$("download-logs").addEventListener("click", () => {
+  if (!currentRyzenadjLog) return;
+  const url = URL.createObjectURL(new Blob([currentRyzenadjLog], { type: "text/plain;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "ryzenadj-logs.txt";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+$("view-logs").addEventListener("click", showLogs);
+$("close-logs").addEventListener("click", () => $("logs-dialog").close());
+$("close-logs-footer").addEventListener("click", () => $("logs-dialog").close());
 
 $("set-form").addEventListener("submit", (event) => {
   event.preventDefault();

@@ -32,6 +32,7 @@ start_process() {
     [ -r "$DAEMON" ] || { echo "$APPNAME: daemon missing: $DAEMON" >&2; return 1; }
     [ -x "$PYTHON" ] || { echo "$APPNAME: python3 is required" >&2; return 1; }
     rm -f "$SOCKET"
+    : > "$LOG_FILE"
     nohup "$PYTHON" "$DAEMON" \
         --ryzenadj "${APPDEST}/ryzenadj" \
         --state-dir "$PKGVAR" \

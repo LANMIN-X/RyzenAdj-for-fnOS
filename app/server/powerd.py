@@ -13,11 +13,12 @@ import sys
 import threading
 import time
 import urllib.parse
+from datetime import datetime
 from pathlib import Path
 
 
 APP = "ryzen-power-control"
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 MIN_WATTS = 10
 MAX_WATTS = 200
 MAX_TEST_SECONDS = 120
@@ -99,6 +100,9 @@ class PowerApp:
         self.ryzenadj = str(Path(ryzenadj).resolve())
         self.state_dir = Path(state_dir)
         self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.ryzenadj_log_path = self.state_dir / "ryzenadj.log"
+        self.ryzenadj_log_lock = threading.Lock()
+        self.ryzenadj_log_path.write_text("", encoding="utf-8")
         self.baseline_path = self.state_dir / "baseline.json"
         self.control_path = self.state_dir / "control.json"
         try:
@@ -161,12 +165,57 @@ class PowerApp:
                 text=True,
                 timeout=10,
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
+        except subprocess.TimeoutExpired as exc:
+            self._log_ryzenadj(args, stdout=exc.stdout, stderr=exc.stderr, error=str(exc))
             raise PowerError("无法运行 ryzenadj：%s" % exc) from exc
+        except OSError as exc:
+            self._log_ryzenadj(args, error=str(exc))
+            raise PowerError("无法运行 ryzenadj：%s" % exc) from exc
+        self._log_ryzenadj(args, result=result)
         if result.returncode != 0:
             detail = (result.stderr or result.stdout).strip()
             raise PowerError("ryzenadj 失败：%s" % (detail[-1200:] or result.returncode))
         return result.stdout
+
+    @staticmethod
+    def _log_text(value):
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return value or ""
+
+    def _log_ryzenadj(self, args, result=None, stdout="", stderr="", error=None):
+        if result is not None:
+            stdout, stderr = result.stdout, result.stderr
+        lines = [
+            "[%s] command: %s" % (
+                datetime.now().astimezone().isoformat(timespec="seconds"),
+                json.dumps([self.ryzenadj, *args], ensure_ascii=False),
+            ),
+        ]
+        if result is not None:
+            lines.append("exit code: %s" % result.returncode)
+        if error:
+            lines.append("error: " + error)
+        for label, value in (("stdout", stdout), ("stderr", stderr)):
+            content = self._log_text(value)
+            if content:
+                lines.extend((label + ":", content.rstrip("\n")))
+        try:
+            with self.ryzenadj_log_lock, self.ryzenadj_log_path.open("a", encoding="utf-8") as log:
+                log.write("\n".join(lines) + "\n\n")
+        except OSError as exc:
+            print("无法写入 RyzenAdj 日志：%s" % exc, flush=True)
+
+    def logs(self):
+        def read(path):
+            try:
+                return path.read_text(encoding="utf-8", errors="replace")
+            except FileNotFoundError:
+                return ""
+            except OSError as exc:
+                return "读取日志失败：%s" % exc
+
+        return {"ok": True, "ryzenadj": read(self.ryzenadj_log_path)}
 
     def _read_info(self):
         with self.io_lock:
@@ -640,7 +689,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 self._json(self.server.app.status())
             except PowerError as exc:
+                print("api error /api/status: %s" % exc, flush=True)
                 self._json({"ok": False, "error": str(exc)}, 503)
+            return
+        if path == "/api/logs":
+            self._json(self.server.app.logs())
             return
         if path.startswith("/api/"):
             self._json({"ok": False, "error": "unknown endpoint"}, 404)
@@ -679,6 +732,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 self._json({"ok": False, "error": "unknown endpoint"}, 404)
         except PowerError as exc:
+            print("api error %s: %s" % (path, exc), flush=True)
             self._json({"ok": False, "error": str(exc)}, 400)
 
 
