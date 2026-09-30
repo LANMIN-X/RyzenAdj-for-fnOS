@@ -2,6 +2,12 @@
 
 通过 RyzenAdj 读取 Ryzen APU 的 SMU 功耗墙、实时功耗和温度，设置或恢复 STAPM / PPT Fast / PPT Slow 限制，并运行限时全核负载。
 
+## 应用截图
+
+![功耗控制界面与新版本提醒](screenshots/power-control-update-available.png)
+
+![功耗上限应用成功状态](screenshots/power-control-applied.png)
+
 ## 安装与使用
 
 1. 在飞牛应用中心选择“手动安装”，打开 `ryzen-power-control.fpk`。
