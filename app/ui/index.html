@@ -271,7 +271,7 @@
                 </button>
               </div>
               <div class="semi-modal-body logs-body">
-                <p class="logs-note">包含系统诊断、RyzenAdj 输出和本次开机的内核日志；分享前请检查其中的设备信息。</p>
+                <p class="logs-note">应用日志每 24 小时自动清理，也可手动清理；系统内核日志仅供查看。分享前请检查其中的设备信息。</p>
                 <section class="log-section">
                   <h3>本次运行日志</h3>
                   <pre id="ryzenadj-log" class="log-output"></pre>
@@ -280,6 +280,7 @@
               <div class="semi-modal-footer logs-footer">
                 <div class="logs-footer-actions">
                   <button id="download-logs" class="semi-button semi-button-tertiary semi-button-outline" type="button" disabled><span class="semi-button-content">下载日志</span></button>
+                  <button id="clear-logs" class="semi-button semi-button-tertiary semi-button-outline" type="button"><span class="semi-button-content">清理日志</span></button>
                   <button id="close-logs-footer" class="semi-button semi-button-primary" type="button"><span class="semi-button-content">关闭</span></button>
                 </div>
               </div>

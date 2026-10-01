@@ -354,6 +354,7 @@ async function showLogs() {
   dialog.showModal();
   currentLog = "";
   $("download-logs").disabled = true;
+  $("clear-logs").disabled = true;
   $("ryzenadj-log").textContent = "正在读取日志…";
   try {
     const logs = await request("/api/logs");
@@ -362,6 +363,8 @@ async function showLogs() {
     $("download-logs").disabled = !currentLog;
   } catch (error) {
     $("ryzenadj-log").textContent = `读取日志失败：${error.message}`;
+  } finally {
+    $("clear-logs").disabled = false;
   }
 }
 
@@ -378,6 +381,19 @@ $("download-logs").addEventListener("click", () => {
 });
 
 $("view-logs").addEventListener("click", showLogs);
+$("clear-logs").addEventListener("click", async () => {
+  $("clear-logs").disabled = true;
+  try {
+    await request("/api/logs/clear", {});
+    currentLog = "";
+    $("download-logs").disabled = true;
+    $("ryzenadj-log").textContent = "应用日志已清理，后续操作会重新记录。系统内核日志仍可在重新打开弹窗后查看。";
+  } catch (error) {
+    $("ryzenadj-log").textContent = `清理日志失败：${error.message}`;
+  } finally {
+    $("clear-logs").disabled = false;
+  }
+});
 $("close-logs").addEventListener("click", () => $("logs-dialog").close());
 $("close-logs-footer").addEventListener("click", () => $("logs-dialog").close());
 

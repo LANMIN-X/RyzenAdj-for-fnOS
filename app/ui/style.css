@@ -167,7 +167,9 @@ h2 { margin: 0; color: var(--text); font-size: 12px; font-weight: 600; }
 .log-section + .log-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--semi-color-border, var(--line)); }
 .log-section h3 { margin: 0 0 8px; color: var(--semi-color-text-0, var(--text)); font-size: 13px; }
 .log-output { max-height: 40vh; overflow: auto; margin: 0; padding: 12px; border-radius: 6px; color: var(--semi-color-text-1, var(--text-secondary)); background: var(--semi-color-fill-0, var(--surface-hover)); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-.logs-footer-actions { display: flex; width: 100%; justify-content: space-between; }
+.logs-footer-actions { display: flex; width: 100%; gap: 10px; }
+.logs-footer-actions > .semi-button { margin: 0; }
+.logs-footer-actions > #close-logs-footer { margin-left: auto; }
 .logs-dialog:focus { outline: none; }
 .nowrap { white-space: nowrap; }
 .power-meter-slot { position: relative; }

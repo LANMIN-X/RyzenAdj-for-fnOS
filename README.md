@@ -29,3 +29,15 @@
 - RyzenAdj v0.19.0
 
 应用以 root 运行以访问 `/dev/mem`。包内包含 RyzenAdj Linux x86_64 程序及其许可证；`libpci.so.3`、`libudev.so.1` 由 fnOS 提供。其他 CPU 和 BIOS 配置尚未验证。
+
+## 功耗读取自动修复
+
+应用优先通过 `ryzen_smu` 读取功耗表。如果驱动缺失、不兼容或读取失败，使用随包的 `ryzen_smu` 0.1.7 源码，为当前内核编译并重新加载驱动，再重试读取。只有驱动修复仍失败时才回退到 `/dev/mem`。每次应用启动最多修复一次；实际读取路径、修复过程和失败原因保存在“查看日志”中。
+
+运行日志支持手动清理，应用日志文件每 24 小时自动清空一次；手动清理后重新计时。系统内核日志在查看时读取，不清理系统日志。
+
+需要当前内核对应的 `/lib/modules/$(uname -r)/build` 构建文件、`gcc`、`make` 和 `insmod`。缺少条件或内核拒绝加载时，应用明确显示修复失败原因。驱动在应用数据目录中构建，重启后由应用按需重新加载，内核升级后针对新版本重新编译。
+
+驱动源码来自 [amkillam/ryzen_smu](https://github.com/amkillam/ryzen_smu)，固定提交 `d2983668300dd2a598e5a7dc40e71ce0678cc270`，按 GPL-2.0 随包提供源码及许可证。
+
+随包的 RyzenAdj 增加了 `RYZENADJ_BACKEND=smu|mem` 后端选择，用于执行上述读取顺序；对应修改后的源码及构建步骤在 `app/RYZENADJ-SOURCE.tar.gz` 中。

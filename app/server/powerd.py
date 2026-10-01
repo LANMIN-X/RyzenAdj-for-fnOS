@@ -8,6 +8,7 @@ import mimetypes
 import os
 import re
 import signal
+import shutil
 import socketserver
 import subprocess
 import sys
@@ -19,7 +20,7 @@ from pathlib import Path
 
 
 APP = "ryzen-power-control"
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 MIN_WATTS = 10
 MAX_WATTS = 200
 MAX_TEST_SECONDS = 120
@@ -104,6 +105,7 @@ class PowerApp:
         self.ryzenadj_log_path = self.state_dir / "ryzenadj.log"
         self.ryzenadj_log_lock = threading.Lock()
         self.ryzenadj_log_path.write_text("", encoding="utf-8")
+        self.log_clear_deadline = time.monotonic() + 24 * 60 * 60
         self._log_system_diagnostics()
         self.baseline_path = self.state_dir / "baseline.json"
         self.control_path = self.state_dir / "control.json"
@@ -125,6 +127,9 @@ class PowerApp:
         self.test_deadline = 0.0
         self.test_result = "未运行"
         self.test_token = 0
+        self.smu_repair_attempted = False
+        self.smu_repair_error = None
+        self.ryzenadj_backend = "smu"
         self._load_or_capture_baseline()
         self._load_control_state()
         if self.control_enabled:
@@ -159,24 +164,31 @@ class PowerApp:
             raise PowerError("当前处理器系列不受 RyzenAdj 功耗限制接口支持")
 
     def _run(self, args):
+        return self._run_command(
+            [self.ryzenadj, *args],
+            env={**os.environ, "RYZENADJ_BACKEND": self.ryzenadj_backend},
+        )
+
+    def _run_command(self, command, timeout=10, env=None):
         try:
             result = subprocess.run(
-                [self.ryzenadj, *args],
+                command,
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=timeout,
+                env=env,
             )
         except subprocess.TimeoutExpired as exc:
-            self._log_ryzenadj(args, stdout=exc.stdout, stderr=exc.stderr, error=str(exc))
-            raise PowerError("无法运行 ryzenadj：%s" % exc) from exc
+            self._log_command(command, stdout=exc.stdout, stderr=exc.stderr, error=str(exc))
+            raise PowerError("无法运行 %s：%s" % (command[0], exc)) from exc
         except OSError as exc:
-            self._log_ryzenadj(args, error=str(exc))
-            raise PowerError("无法运行 ryzenadj：%s" % exc) from exc
-        self._log_ryzenadj(args, result=result)
+            self._log_command(command, error=str(exc))
+            raise PowerError("无法运行 %s：%s" % (command[0], exc)) from exc
+        self._log_command(command, result=result)
         if result.returncode != 0:
-            detail = (result.stderr or result.stdout).strip()
-            raise PowerError("ryzenadj 失败：%s" % (detail[-1200:] or result.returncode))
+            detail = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
+            raise PowerError("%s 失败（退出码 %s）：%s" % (Path(command[0]).name, result.returncode, detail[-1200:]))
         return result.stdout
 
     @staticmethod
@@ -300,13 +312,13 @@ class PowerApp:
         except OSError as exc:
             print("无法写入系统诊断日志：%s" % exc, flush=True)
 
-    def _log_ryzenadj(self, args, result=None, stdout="", stderr="", error=None):
+    def _log_command(self, command, result=None, stdout="", stderr="", error=None):
         if result is not None:
             stdout, stderr = result.stdout, result.stderr
         lines = [
-            "[%s] command: %s" % (
+            "[%s] %s" % (
                 datetime.now().astimezone().isoformat(timespec="seconds"),
-                json.dumps([self.ryzenadj, *args], ensure_ascii=False),
+                "command: " + json.dumps(command, ensure_ascii=False) if command else "ryzen_smu automatic repair",
             ),
         ]
         if result is not None:
@@ -384,9 +396,83 @@ class PowerApp:
             "kernel": self._kernel_logs(),
         }
 
+    def clear_logs(self, only_if_due=False):
+        with self.ryzenadj_log_lock:
+            if only_if_due and time.monotonic() < self.log_clear_deadline:
+                return {"ok": True, "cleared": False}
+            try:
+                self.ryzenadj_log_path.write_text("", encoding="utf-8")
+                service_log = self.state_dir / "info.log"
+                if service_log.exists():
+                    service_log.write_text("", encoding="utf-8")
+            except OSError as exc:
+                raise PowerError("清理应用日志失败：%s" % exc) from exc
+            self.log_clear_deadline = time.monotonic() + 24 * 60 * 60
+        return {"ok": True, "cleared": True}
+
+    def _repair_smu_driver(self):
+        if os.geteuid() != 0:
+            raise PowerError("加载 ryzen_smu 驱动需要 root 权限")
+        kernel = os.uname().release
+        headers = Path("/lib/modules") / kernel / "build"
+        if not (headers / "Makefile").is_file() or not (headers / "Module.symvers").is_file():
+            raise PowerError("缺少当前内核 %s 的完整构建文件：%s" % (kernel, headers))
+        commands = {name: shutil.which(name) for name in ("make", "gcc", "insmod")}
+        missing = [name for name, path in commands.items() if path is None]
+        if missing:
+            raise PowerError("系统缺少驱动构建或加载工具：" + ", ".join(missing))
+        source = Path(__file__).resolve().parent.parent / "ryzen_smu"
+        build = self.state_dir / "ryzen-smu-build" / kernel
+        try:
+            build.mkdir(parents=True, exist_ok=True)
+            for name in ("Makefile", "drv.c", "smu.c", "smu.h"):
+                shutil.copyfile(source / name, build / name)
+        except OSError as exc:
+            raise PowerError("无法准备 ryzen_smu 驱动源码：%s" % exc) from exc
+        self._run_command([
+            commands["make"], "-C", str(headers), "M=" + str(build.resolve()),
+            "CC=" + commands["gcc"], "-j2", "modules",
+        ], timeout=120)
+        if Path("/sys/module/ryzen_smu").exists():
+            rmmod = shutil.which("rmmod")
+            if rmmod is None:
+                raise PowerError("系统缺少 rmmod，无法重新加载 ryzen_smu 驱动")
+            self._run_command([rmmod, "ryzen_smu"])
+        self._run_command([commands["insmod"], str(build / "ryzen_smu.ko")])
+        interface = Path("/sys/kernel/ryzen_smu_drv")
+        if not all((interface / name).is_file() for name in ("drv_version", "smn", "pm_table", "pm_table_size")):
+            raise PowerError("ryzen_smu 已加载，但没有提供兼容的 SMU 功耗表接口")
+
     def _read_info(self):
         with self.io_lock:
-            info = parse_info(self._run(["--info", "--dump-table"]))
+            try:
+                info = parse_info(self._run(["--info", "--dump-table"]))
+            except PowerError as exc:
+                if self.ryzenadj_backend == "mem":
+                    raise PowerError("%s；/dev/mem 回退读取也失败：%s" % (self.smu_repair_error, exc)) from exc
+                self._log_command(None, error="ryzen_smu 读取失败：%s" % exc)
+                repaired = False
+                if not self.smu_repair_attempted:
+                    self.smu_repair_attempted = True
+                    self._log_command(None, stdout="开始编译并加载当前内核的 ryzen_smu 驱动")
+                    try:
+                        self._repair_smu_driver()
+                        info = parse_info(self._run(["--info", "--dump-table"]))
+                    except PowerError as repair_error:
+                        self.smu_repair_error = "自动修复功耗读取失败：%s" % repair_error
+                        self._log_command(None, error=self.smu_repair_error)
+                    else:
+                        repaired = True
+                        self._log_command(None, stdout="ryzen_smu 驱动加载成功，功耗表读取已恢复")
+                if not repaired:
+                    if self.smu_repair_error is None:
+                        self.smu_repair_error = "ryzen_smu 修复后再次读取失败：%s" % exc
+                    self.ryzenadj_backend = "mem"
+                    self._log_command(None, stdout="ryzen_smu 修复未恢复读取，回退到 /dev/mem")
+                    try:
+                        info = parse_info(self._run(["--info", "--dump-table"]))
+                    except PowerError as mem_error:
+                        raise PowerError("%s；/dev/mem 回退读取也失败：%s" % (self.smu_repair_error, mem_error)) from mem_error
         if info["cpu_family"] == "Unknown":
             try:
                 cpuinfo = Path("/proc/cpuinfo").read_text(encoding="utf-8")
@@ -879,7 +965,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         path = self._path()
         try:
-            if path == "/api/power/set":
+            if path == "/api/logs/clear":
+                self._json(self.server.app.clear_logs())
+            elif path == "/api/power/set":
                 limits = (self.server.app.set_limits(payload.get("limits"))
                           if "limits" in payload
                           else self.server.app.set_watts(payload.get("watts")))
@@ -935,7 +1023,11 @@ def main():
     thread.start()
     print("%s %s serving unix:%s" % (APP, VERSION, socket_path), flush=True)
     try:
-        stopping.wait()
+        while not stopping.wait(60):
+            try:
+                app.clear_logs(only_if_due=True)
+            except PowerError as exc:
+                print("自动清理日志失败：%s" % exc, flush=True)
     finally:
         app.stop_test("应用服务已停止")
         server.shutdown()
