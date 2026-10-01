@@ -8,7 +8,7 @@ let appReady = false;
 let cpuGateBlocked = false;
 let versionCheckStarted = false;
 let detectedCpuFamily = "Unknown";
-let currentRyzenadjLog = "";
+let currentLog = "";
 const LIMIT_KEYS = ["stapm", "fast", "slow"];
 const LIMIT_LABELS = { stapm: "STAPM", fast: "PPT 瞬时", slow: "PPT 慢速" };
 let supportedLimitKeys = [];
@@ -352,22 +352,22 @@ $("cpu-gate").addEventListener("cancel", (event) => event.preventDefault());
 async function showLogs() {
   const dialog = $("logs-dialog");
   dialog.showModal();
-  currentRyzenadjLog = "";
+  currentLog = "";
   $("download-logs").disabled = true;
   $("ryzenadj-log").textContent = "正在读取日志…";
   try {
     const logs = await request("/api/logs");
-    currentRyzenadjLog = logs.ryzenadj || "";
-    $("ryzenadj-log").textContent = currentRyzenadjLog || "本次运行暂无 RyzenAdj 日志。";
-    $("download-logs").disabled = !currentRyzenadjLog;
+    currentLog = [logs.ryzenadj, logs.kernel].filter(Boolean).join("\n\n");
+    $("ryzenadj-log").textContent = currentLog || "本次运行暂无日志。";
+    $("download-logs").disabled = !currentLog;
   } catch (error) {
     $("ryzenadj-log").textContent = `读取日志失败：${error.message}`;
   }
 }
 
 $("download-logs").addEventListener("click", () => {
-  if (!currentRyzenadjLog) return;
-  const url = URL.createObjectURL(new Blob([currentRyzenadjLog], { type: "text/plain;charset=utf-8" }));
+  if (!currentLog) return;
+  const url = URL.createObjectURL(new Blob([currentLog], { type: "text/plain;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
   link.download = "ryzenadj-logs.txt";

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import gzip
 import http.server
 import json
 import math
@@ -18,7 +19,7 @@ from pathlib import Path
 
 
 APP = "ryzen-power-control"
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 MIN_WATTS = 10
 MAX_WATTS = 200
 MAX_TEST_SECONDS = 120
@@ -103,6 +104,7 @@ class PowerApp:
         self.ryzenadj_log_path = self.state_dir / "ryzenadj.log"
         self.ryzenadj_log_lock = threading.Lock()
         self.ryzenadj_log_path.write_text("", encoding="utf-8")
+        self._log_system_diagnostics()
         self.baseline_path = self.state_dir / "baseline.json"
         self.control_path = self.state_dir / "control.json"
         try:
@@ -183,6 +185,121 @@ class PowerApp:
             return value.decode("utf-8", errors="replace")
         return value or ""
 
+    def _log_system_diagnostics(self):
+        lines = [
+            "[%s] system diagnostics" % datetime.now().astimezone().isoformat(timespec="seconds"),
+            "app version: %s" % VERSION,
+            "python version: %s" % sys.version.split()[0],
+            "system architecture: %s" % os.uname().machine,
+            "effective uid/gid: %s/%s" % (os.geteuid(), os.getegid()),
+        ]
+
+        def record(label, stdout="", returncode=None, stderr="", error=None):
+            lines.append("command: " + label)
+            if returncode is not None:
+                lines.append("exit code: %s" % returncode)
+            if error:
+                lines.append("error: " + error)
+            if stdout:
+                lines.extend(("stdout:", stdout.rstrip("\n")))
+            if stderr:
+                lines.extend(("stderr:", stderr.rstrip("\n")))
+            lines.append("")
+
+        def capture(label, command, filter_cpu=False):
+            try:
+                result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=1)
+            except subprocess.TimeoutExpired as exc:
+                record(label, self._log_text(exc.stdout), stderr=self._log_text(exc.stderr), error="command timed out")
+            except OSError as exc:
+                record(label, error=str(exc))
+            else:
+                stdout = result.stdout
+                if filter_cpu:
+                    stdout = "\n".join(
+                        line for line in stdout.splitlines()
+                        if re.search(r"Model name|CPU family|Model:", line)
+                    )
+                record(label, stdout, result.returncode, result.stderr)
+
+        record("uname -r", os.uname().release, 0)
+        for label, path in (("cat /etc/os-release", "/etc/os-release"), ("cat /proc/cmdline", "/proc/cmdline")):
+            try:
+                record(label, Path(path).read_text(encoding="utf-8").strip(), 0)
+            except OSError as exc:
+                record(label, error=str(exc))
+
+        capture("lscpu | grep -E 'Model name|CPU family|Model:'", ["lscpu"], filter_cpu=True)
+        capture("ls -l /dev/mem", ["ls", "-l", "/dev/mem"])
+
+        lines.append("command: read CPU identifiers from the first /proc/cpuinfo block")
+        try:
+            cpuinfo = Path("/proc/cpuinfo").read_text(encoding="utf-8")
+            fields = ("vendor_id", "cpu family", "model", "model name", "stepping", "microcode")
+            values = {}
+            for line in cpuinfo.splitlines():
+                if not line.strip():
+                    break
+                name, separator, value = line.partition(":")
+                name = name.strip()
+                if separator and name in fields and name not in values:
+                    values[name] = value.strip()
+            lines.extend(("exit code: 0", "stdout:", "\n".join(
+                "%s: %s" % (name, values[name]) for name in fields if name in values
+            ) or "no matching CPU fields"))
+        except OSError as exc:
+            lines.append("error: " + str(exc))
+        lines.append("")
+
+        release = os.uname().release
+        config_paths = (
+            Path("/proc/config.gz"),
+            Path("/boot/config-%s" % release),
+            Path("/lib/modules/%s/build/.config" % release),
+            Path("/usr/src/linux-headers-%s/.config" % release),
+        )
+        lines.append("command: kernel DEVMEM configuration")
+        config = None
+        config_path = None
+        for path in config_paths:
+            try:
+                if path.suffix == ".gz":
+                    with gzip.open(path, "rt", encoding="utf-8", errors="replace") as source:
+                        config = source.read()
+                else:
+                    config = path.read_text(encoding="utf-8", errors="replace")
+                config_path = path
+                break
+            except (OSError, EOFError):
+                continue
+        if config is None:
+            lines.append("error: no readable kernel config found")
+        else:
+            lines.extend(("source: %s" % config_path, "stdout:"))
+            config_lines = config.splitlines()
+            for name in ("DEVMEM", "STRICT_DEVMEM", "IO_STRICT_DEVMEM"):
+                match = next((line for line in config_lines if line.startswith("CONFIG_%s=" % name)), None)
+                unset = "# CONFIG_%s is not set" % name
+                lines.append(match or (unset if unset in config_lines else "CONFIG_%s: not found" % name))
+        lines.append("")
+
+        capture("modinfo ryzen_smu", ["modinfo", "ryzen_smu"])
+        lines.append("command: grep '^ryzen_smu ' /proc/modules || echo not-loaded")
+        try:
+            modules = Path("/proc/modules").read_text(encoding="utf-8")
+            matches = [line for line in modules.splitlines() if line.startswith("ryzen_smu ")]
+            lines.extend(("exit code: 0", "stdout:", "\n".join(matches) if matches else "not-loaded"))
+        except OSError as exc:
+            lines.append("error: " + str(exc))
+        lines.append("")
+
+        capture("ls -la /sys/kernel/ryzen_smu_drv 2>&1", ["ls", "-la", "/sys/kernel/ryzen_smu_drv"])
+        try:
+            with self.ryzenadj_log_lock, self.ryzenadj_log_path.open("a", encoding="utf-8") as log:
+                log.write("\n".join(lines) + "\n")
+        except OSError as exc:
+            print("无法写入系统诊断日志：%s" % exc, flush=True)
+
     def _log_ryzenadj(self, args, result=None, stdout="", stderr="", error=None):
         if result is not None:
             stdout, stderr = result.stdout, result.stderr
@@ -206,6 +323,52 @@ class PowerApp:
         except OSError as exc:
             print("无法写入 RyzenAdj 日志：%s" % exc, flush=True)
 
+    def _kernel_logs(self):
+        def capture(label, command):
+            lines = ["command: " + label]
+            try:
+                result = subprocess.run(
+                    command,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=30,
+                )
+            except subprocess.TimeoutExpired as exc:
+                lines.append("error: command timed out after 30 seconds")
+                stdout = self._log_text(exc.stdout)
+                stderr = self._log_text(exc.stderr)
+                returncode = None
+                ok = False
+            except OSError as exc:
+                lines.append("error: " + str(exc))
+                stdout = stderr = ""
+                returncode = None
+                ok = False
+            else:
+                stdout, stderr = result.stdout, result.stderr
+                returncode = result.returncode
+                ok = result.returncode == 0
+            if returncode is not None:
+                lines.append("exit code: %s" % returncode)
+            if stdout:
+                lines.extend(("stdout:", stdout.rstrip("\n")))
+            if stderr:
+                lines.extend(("stderr:", stderr.rstrip("\n")))
+            return "\n".join(lines), ok, stdout
+
+        journal, ok, output = capture(
+            "journalctl -k -b --no-pager -o short-iso",
+            ["journalctl", "-k", "-b", "--no-pager", "-o", "short-iso"],
+        )
+        header = "[%s] current-boot kernel logs" % datetime.now().astimezone().isoformat(timespec="seconds")
+        if ok and output.strip() and output.strip() != "-- No entries --":
+            return "\n".join((header, "source: systemd journal", journal))
+        dmesg, _, _ = capture("dmesg", ["dmesg"])
+        return "\n\n".join((header, "source: journalctl (empty or unavailable)", journal, "source: dmesg ring buffer", dmesg))
+
     def logs(self):
         def read(path):
             try:
@@ -215,7 +378,11 @@ class PowerApp:
             except OSError as exc:
                 return "读取日志失败：%s" % exc
 
-        return {"ok": True, "ryzenadj": read(self.ryzenadj_log_path)}
+        return {
+            "ok": True,
+            "ryzenadj": read(self.ryzenadj_log_path),
+            "kernel": self._kernel_logs(),
+        }
 
     def _read_info(self):
         with self.io_lock:
