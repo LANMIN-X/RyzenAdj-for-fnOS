@@ -191,6 +191,7 @@ function setTestStatus(test) {
   button.classList.toggle("btn-primary", !test.running);
   button.classList.toggle("btn-error", test.running);
   $("duration").disabled = test.running;
+  $("test-temperature").disabled = test.running;
   $("duration-slider").disabled = test.running;
 }
 
@@ -397,7 +398,38 @@ $("clear-logs").addEventListener("click", async () => {
 $("close-logs").addEventListener("click", () => $("logs-dialog").close());
 $("close-logs-footer").addEventListener("click", () => $("logs-dialog").close());
 
-$("set-form").addEventListener("submit", (event) => {
+function confirmLowPower() {
+  const dialog = $("low-power-dialog");
+  if (dialog.open) return Promise.resolve(false);
+  const button = $("low-power-apply");
+  const label = button.querySelector(".semi-button-content");
+  const deadline = performance.now() + 5000;
+  dialog.returnValue = "";
+  const update = () => {
+    const remaining = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
+    button.disabled = remaining > 0;
+    button.classList.toggle("semi-button-disabled", button.disabled);
+    button.setAttribute("aria-disabled", String(button.disabled));
+    label.textContent = remaining ? `同意应用(${remaining}s)` : "同意应用";
+  };
+  update();
+  return new Promise((resolve) => {
+    const timer = setInterval(update, 250);
+    dialog.addEventListener("close", () => {
+      clearInterval(timer);
+      resolve(dialog.returnValue === "apply");
+    }, { once: true });
+    dialog.showModal();
+  });
+}
+
+$("low-power-cancel").addEventListener("click", () => $("low-power-dialog").close());
+$("low-power-close").addEventListener("click", () => $("low-power-dialog").close());
+$("low-power-apply").addEventListener("click", () => {
+  if (!$("low-power-apply").disabled) $("low-power-dialog").close("apply");
+});
+
+$("set-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   let body;
   let success;
@@ -428,6 +460,8 @@ $("set-form").addEventListener("submit", (event) => {
     body = { watts: value };
     success = `${supportedLimitKeys.map((key) => LIMIT_LABELS[key]).join("、")}功耗墙已设置为 ${value} W。`;
   }
+  const limits = body.limits ? Object.values(body.limits) : [body.watts];
+  if (limits.some((value) => value < 5) && !await confirmLowPower()) return;
   runAction(async () => {
     await request("/api/power/set", body);
     powerDraftDirty = false;
@@ -496,11 +530,22 @@ $("separate-limits").addEventListener("change", (event) => {
   }
 });
 
+function updateTestHint() {
+  const seconds = $("duration").value || "—";
+  const temperature = $("test-temperature").value || "—";
+  $("test-hint").textContent = `持续时间 ${seconds}秒，${temperature}°C 自动停止`;
+}
+
+$("test-temperature").addEventListener("input", updateTestHint);
+updateTestHint();
+
 $("duration-slider").addEventListener("input", (event) => {
   $("duration").value = event.currentTarget.value;
+  updateTestHint();
 });
 
 $("duration").addEventListener("input", (event) => {
+  updateTestHint();
   const value = Number(event.currentTarget.value);
   if (Number.isFinite(value)) {
     $("duration-slider").value = String(Math.min(
@@ -524,7 +569,14 @@ $("toggle-test").addEventListener("click", () => {
     showNotice(`请输入 ${min}–${max} 之间的整数秒数。`, true);
     return;
   }
-  runAction(() => request("/api/test/start", { seconds }), "全核负载测试已启动。");
+  const temperatureInput = $("test-temperature");
+  const temperature_limit = Number(temperatureInput.value);
+  if (!Number.isInteger(temperature_limit) || temperature_limit < Number(temperatureInput.min)
+      || temperature_limit > Number(temperatureInput.max)) {
+    showNotice(`请输入 ${temperatureInput.min}–${temperatureInput.max}°C 之间的整数温度。`, true);
+    return;
+  }
+  runAction(() => request("/api/test/start", { seconds, temperature_limit }), "全核负载测试已启动。");
 });
 
 showCpuChecking();

@@ -20,8 +20,8 @@ from pathlib import Path
 
 
 APP = "ryzen-power-control"
-VERSION = "1.0.5"
-MIN_WATTS = 10
+VERSION = "1.0.6"
+MIN_WATTS = 2
 MAX_WATTS = 200
 MAX_TEST_SECONDS = 120
 TEMP_LIMIT_C = 85.0
@@ -312,13 +312,13 @@ class PowerApp:
         except OSError as exc:
             print("无法写入系统诊断日志：%s" % exc, flush=True)
 
-    def _log_command(self, command, result=None, stdout="", stderr="", error=None):
+    def _log_command(self, command, result=None, stdout="", stderr="", error=None, event="ryzen_smu automatic repair"):
         if result is not None:
             stdout, stderr = result.stdout, result.stderr
         lines = [
             "[%s] %s" % (
                 datetime.now().astimezone().isoformat(timespec="seconds"),
-                "command: " + json.dumps(command, ensure_ascii=False) if command else "ryzen_smu automatic repair",
+                "command: " + json.dumps(command, ensure_ascii=False) if command else event,
             ),
         ]
         if result is not None:
@@ -601,9 +601,11 @@ class PowerApp:
             actual = parse_info(self._run(["--info"]))["limits"]
         for key, expected in limits.items():
             if abs(actual[key] - expected) > 0.01:
-                raise PowerError("%s 读回为 %.3fW，期望 %.3fW" % (
-                    LIMIT_FIELDS[key], actual[key], expected
-                ))
+                detail = "%s 设置未生效：期望 %.3fW，实际读回 %.3fW；固件可能拒绝、截断或覆盖设置。" % (
+                    LIMIT_FIELDS[key], expected, actual[key]
+                )
+                self._log_command(None, error=detail, event="power limit readback verification")
+                raise PowerError(detail)
         return actual
 
     def set_watts(self, watts):
@@ -615,7 +617,7 @@ class PowerApp:
             raise PowerError("当前处理器系列不受 RyzenAdj 功耗限制接口支持")
         max_watts = self._limit_range(info)["max"]
         if not MIN_WATTS <= watts <= max_watts:
-            raise PowerError("当前设备支持 %d–%dW" % (MIN_WATTS, max_watts))
+            raise PowerError("应用调整范围为 %d–%dW" % (MIN_WATTS, max_watts))
         if not self.control_enabled:
             raise PowerError("请先开启功耗接管")
         return self._apply_watts(watts, supported_keys)
@@ -634,7 +636,7 @@ class PowerApp:
                 raise PowerError("功耗必须是整数瓦数")
         maximum = self._limit_range(info)["max"]
         if any(not MIN_WATTS <= value <= maximum for value in limits.values()):
-            raise PowerError("当前设备支持 %d–%dW" % (MIN_WATTS, maximum))
+            raise PowerError("应用调整范围为 %d–%dW" % (MIN_WATTS, maximum))
         return self._apply_limits({key: float(value) for key, value in limits.items()}, separate=True)
 
     def _apply_watts(self, watts, supported_keys):
@@ -729,18 +731,21 @@ class PowerApp:
         except AttributeError:
             return max(1, os.cpu_count() or 1)
 
-    def start_test(self, seconds):
+    def start_test(self, seconds, temperature_limit=TEMP_LIMIT_C):
         if isinstance(seconds, bool) or not isinstance(seconds, int):
             raise PowerError("测试时长必须是整数秒")
         if not 5 <= seconds <= MAX_TEST_SECONDS:
             raise PowerError("测试时长需在 5–%d 秒之间" % MAX_TEST_SECONDS)
+        if (isinstance(temperature_limit, bool) or not isinstance(temperature_limit, (int, float))
+                or not math.isfinite(temperature_limit) or not 40 <= temperature_limit <= 95):
+            raise PowerError("自动停止温度需在 40–95°C 之间")
         with self.test_lock:
             if self.test_active:
                 raise PowerError("负载测试正在运行")
             current = self._read_info()
             self._require_supported_cpu(current)
-            if current["temperature"] >= TEMP_LIMIT_C:
-                raise PowerError("CPU 温度已达到 %.1f°C，暂不启动负载测试" % TEMP_LIMIT_C)
+            if current["temperature"] >= temperature_limit:
+                raise PowerError("CPU 温度已达到 %.1f°C，暂不启动负载测试" % temperature_limit)
             count = self._worker_count()
             deadline = time.monotonic() + seconds
             workers = []
@@ -767,10 +772,10 @@ class PowerApp:
             self.test_result = "运行中"
             self.test_token += 1
             token = self.test_token
-        threading.Thread(target=self._watch_test, args=(token,), daemon=True).start()
+        threading.Thread(target=self._watch_test, args=(token, temperature_limit), daemon=True).start()
         return self.test_status()
 
-    def _watch_test(self, token):
+    def _watch_test(self, token, temperature_limit):
         while True:
             with self.test_lock:
                 if not self.test_active or token != self.test_token:
@@ -788,8 +793,8 @@ class PowerApp:
             except PowerError as exc:
                 self.stop_test("功耗监测失败，已停止：%s" % exc)
                 return
-            if temperature >= TEMP_LIMIT_C:
-                self.stop_test("温度达到 %.1f°C，已自动停止" % TEMP_LIMIT_C)
+            if temperature >= temperature_limit:
+                self.stop_test("温度达到 %.1f°C，已自动停止" % temperature_limit)
                 return
             time.sleep(1)
 
@@ -979,7 +984,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 limits = self.server.app.restore()
                 self._json({"ok": True, "limits": limits})
             elif path == "/api/test/start":
-                test = self.server.app.start_test(payload.get("seconds", 30))
+                test = self.server.app.start_test(payload.get("seconds", 30), payload.get("temperature_limit", TEMP_LIMIT_C))
                 self._json({"ok": True, "test": test})
             elif path == "/api/test/stop":
                 test = self.server.app.stop_test("已手动停止")

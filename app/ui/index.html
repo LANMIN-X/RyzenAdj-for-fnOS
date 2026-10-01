@@ -94,18 +94,18 @@
         <div class="limit-list">
           <div class="limit-row">
             <div class="limit-label-line"><span class="limit-marker marker-blue"></span><span>STAPM 持续限制</span><strong><span id="limit-stapm">—</span><small>W</small></strong><span id="limit-stapm-unavailable" class="limit-unavailable" hidden>不可调</span></div>
-            <div class="limit-track" role="progressbar" aria-label="STAPM 功耗上限" aria-valuemin="10"><span id="bar-stapm"></span></div>
+            <div class="limit-track" role="progressbar" aria-label="STAPM 功耗上限" aria-valuemin="2"><span id="bar-stapm"></span></div>
           </div>
           <div class="limit-row">
             <div class="limit-label-line"><span class="limit-marker marker-cyan"></span><span>PPT 瞬时限制</span><strong><span id="limit-fast">—</span><small>W</small></strong><span id="limit-fast-unavailable" class="limit-unavailable" hidden>不可调</span></div>
-            <div class="limit-track" role="progressbar" aria-label="PPT 瞬时功耗上限" aria-valuemin="10"><span id="bar-fast"></span></div>
+            <div class="limit-track" role="progressbar" aria-label="PPT 瞬时功耗上限" aria-valuemin="2"><span id="bar-fast"></span></div>
           </div>
           <div class="limit-row">
             <div class="limit-label-line"><span class="limit-marker marker-violet"></span><span>PPT 慢速限制</span><strong><span id="limit-slow">—</span><small>W</small></strong><span id="limit-slow-unavailable" class="limit-unavailable" hidden>不可调</span></div>
-            <div class="limit-track" role="progressbar" aria-label="PPT 慢速功耗上限" aria-valuemin="10"><span id="bar-slow"></span></div>
+            <div class="limit-track" role="progressbar" aria-label="PPT 慢速功耗上限" aria-valuemin="2"><span id="bar-slow"></span></div>
           </div>
         </div>
-        <div class="limits-foot"><span>当前设备可设置范围</span><strong id="limit-range">读取中…</strong></div>
+        <div class="limits-foot"><span>应用调整范围</span><strong id="limit-range">读取中…</strong></div>
       </article>
     </section>
 
@@ -123,31 +123,31 @@
         <form id="set-form" class="set-form">
           <div id="shared-limit-controls">
             <label for="watts">功耗上限</label>
-            <input id="watts-slider" class="watt-slider" type="range" min="10" max="200" step="1" value="45" aria-label="功耗上限滑块" disabled>
+            <input id="watts-slider" class="watt-slider" type="range" min="2" max="200" step="1" value="45" aria-label="功耗上限滑块" disabled>
             <div class="set-controls">
               <div class="watt-input">
-                <input id="watts" name="watts" class="input" type="number" min="10" max="200" step="1" value="45" required disabled>
+                <input id="watts" name="watts" class="input" type="number" min="2" max="200" step="1" value="45" required disabled>
                 <span>W</span>
               </div>
-              <button class="btn btn-primary apply-button" type="submit" disabled>应用新上限</button>
+              <button class="btn btn-primary apply-button" type="submit" disabled>确认应用</button>
               <button class="btn restore-bios-button" type="button">还原 BIOS 设置</button>
             </div>
           </div>
           <div id="separate-limit-controls" class="separate-limit-controls" hidden>
             <div class="separate-limit-row">
               <div class="separate-limit-head"><label for="limit-stapm-slider">STAPM</label><output id="limit-stapm-value" class="separate-reading">28.0 W</output></div>
-              <input id="limit-stapm-slider" class="watt-slider separate-slider" type="range" min="10" max="200" step="1" aria-label="STAPM 功耗上限" disabled>
+              <input id="limit-stapm-slider" class="watt-slider separate-slider" type="range" min="2" max="200" step="1" aria-label="STAPM 功耗上限" disabled>
             </div>
             <div class="separate-limit-row">
               <div class="separate-limit-head"><label for="limit-fast-slider">PPT 瞬时</label><output id="limit-fast-value" class="separate-reading">28.0 W</output></div>
-              <input id="limit-fast-slider" class="watt-slider separate-slider" type="range" min="10" max="200" step="1" aria-label="PPT 瞬时功耗上限" disabled>
+              <input id="limit-fast-slider" class="watt-slider separate-slider" type="range" min="2" max="200" step="1" aria-label="PPT 瞬时功耗上限" disabled>
             </div>
             <div class="separate-limit-row">
               <div class="separate-limit-head"><label for="limit-slow-slider">PPT 慢速</label><output id="limit-slow-value" class="separate-reading">28.0 W</output></div>
-              <input id="limit-slow-slider" class="watt-slider separate-slider" type="range" min="10" max="200" step="1" aria-label="PPT 慢速功耗上限" disabled>
+              <input id="limit-slow-slider" class="watt-slider separate-slider" type="range" min="2" max="200" step="1" aria-label="PPT 慢速功耗上限" disabled>
             </div>
             <div class="separate-apply-row set-controls">
-              <button class="btn btn-primary apply-button separate-apply" type="submit" disabled>应用新上限</button>
+              <button class="btn btn-primary apply-button separate-apply" type="submit" disabled>确认应用</button>
               <button class="btn restore-bios-button" type="button">还原 BIOS 设置</button>
             </div>
           </div>
@@ -179,6 +179,10 @@
               <input id="duration" class="input" type="number" min="5" max="120" step="1" value="30" aria-label="测试时长" required>
               <span>秒</span>
             </div>
+            <div class="watt-input">
+              <input id="test-temperature" class="input" type="number" min="40" max="95" step="1" value="85" aria-label="自动停止温度" required>
+              <span>°C</span>
+            </div>
             <button id="toggle-test" class="btn btn-primary apply-button test-toggle" type="button" data-running="false">开始测试</button>
           </div>
         </div>
@@ -190,7 +194,7 @@
               <strong id="test-result" aria-live="polite">尚未运行</strong>
             </div>
           </div>
-          <span class="control-status test-hint">可设置 5–120 秒 · 85°C 自动停止</span>
+          <span id="test-hint" class="control-status test-hint"></span>
         </div>
       </article>
     </section>
@@ -249,6 +253,34 @@
               </div>
               <div id="cpu-gate-retry-row" class="cpu-gate-actions" hidden>
                 <button id="cpu-gate-retry" class="semi-button semi-button-primary" type="button"><span class="semi-button-content">重新检测</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="low-power-dialog" class="cpu-gate" aria-labelledby="low-power-title" tabindex="-1">
+    <div class="semi-portal" style="z-index: 1000;">
+      <div class="semi-modal-confirm">
+      <div class="semi-modal-mask"></div>
+      <div role="none" class="semi-modal-wrap semi-modal-wrap-center">
+        <div class="semi-modal semi-modal-centered semi-modal-small">
+          <div role="dialog" aria-modal="true" aria-labelledby="low-power-title" aria-describedby="low-power-body" class="semi-modal-content">
+            <div class="semi-modal-header">
+              <h2 class="semi-typography semi-modal-title semi-typography-primary semi-typography-normal semi-typography-h5" id="low-power-title"><span class="semi-modal-confirm-title-text">确认应用低功耗限制？</span></h2>
+              <button id="low-power-close" aria-label="close" class="semi-button semi-button-tertiary semi-button-size-small semi-button-borderless semi-modal-close semi-button-with-icon semi-button-with-icon-only" type="button">
+                <span class="semi-button-content"><span role="img" aria-label="close" class="semi-icon semi-icon-default semi-icon-close"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" focusable="false" aria-hidden="true"><path d="M17.66 19.78a1.5 1.5 0 0 0 2.12-2.12L14.12 12l5.66-5.66a1.5 1.5 0 0 0-2.12-2.12L12 9.88 6.34 4.22a1.5 1.5 0 1 0-2.12 2.12L9.88 12l-5.66 5.66a1.5 1.5 0 0 0 2.12 2.12L12 14.12l5.66 5.66Z" fill="currentColor"></path></svg></span></span>
+              </button>
+            </div>
+            <div class="semi-modal-body" id="low-power-body">
+              <div class="semi-modal-confirm-content">当前设置低于 5W，可能导致 CPU 大幅降频、系统响应变慢，影响文件传输和后台任务。实际功耗也可能超过设置值。是否继续应用？</div>
+            </div>
+            <div class="semi-modal-footer">
+              <div class="cpu-gate-actions">
+                <button id="low-power-cancel" class="semi-button semi-button-tertiary semi-button-outline" type="button" autofocus><span class="semi-button-content">取消</span></button>
+                <button id="low-power-apply" class="semi-button semi-button-primary" type="button" disabled><span class="semi-button-content">同意应用(5s)</span></button>
               </div>
             </div>
           </div>
