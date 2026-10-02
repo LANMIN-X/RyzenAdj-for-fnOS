@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 APP = "ryzen-power-control"
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 MIN_WATTS = 2
 MAX_WATTS = 200
 MAX_TEST_SECONDS = 120
@@ -830,6 +830,19 @@ class PowerApp:
         with self.test_lock:
             return self._test_status_unlocked()
 
+    @staticmethod
+    def _cpu_frequency():
+        paths = list(Path("/sys/devices/system/cpu/cpufreq").glob("policy*/scaling_cur_freq"))
+        if not paths:
+            return {"mhz": None, "error": "系统未提供 CPU 实时频率接口"}
+        try:
+            frequencies = [int(path.read_text().strip()) for path in paths]
+        except (OSError, ValueError) as exc:
+            return {"mhz": None, "error": "读取 CPU 实时频率失败：%s" % exc}
+        if any(value <= 0 for value in frequencies):
+            return {"mhz": None, "error": "系统返回了无效的 CPU 频率"}
+        return {"mhz": max(frequencies) / 1000, "error": None}
+
     def status(self):
         try:
             current = self._read_info()
@@ -862,6 +875,7 @@ class PowerApp:
             "separate_limits": self.separate_limits,
             "power": current["power"],
             "temperature": current["temperature"],
+            "cpu_frequency": self._cpu_frequency(),
             "test": self.test_status(),
             "limit_range": self._limit_range(current),
         }

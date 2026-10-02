@@ -225,6 +225,9 @@ async function refresh() {
     $("power-socket").textContent = data.power.socket == null ? "—" : watts(data.power.socket);
     $("power-apu").textContent = data.power.apu == null ? "—" : watts(data.power.apu);
     $("temperature").textContent = Number(data.temperature).toFixed(1);
+    const frequency = data.cpu_frequency;
+    $("cpu-frequency").textContent = frequency?.mhz == null ? "—" : (frequency.mhz / 1000).toFixed(2);
+    $("cpu-frequency").title = frequency?.error || "当前各核心采样频率中的最高值";
     const support = data.power_limit_support || {};
     supportedLimitKeys = LIMIT_KEYS.filter((key) => support[key]);
     const baseline = data.baseline;
@@ -297,7 +300,7 @@ async function refresh() {
       const controlStatus = data.control_enabled
         ? (data.separate_limits ? "独立功耗墙接管中" : `功耗接管中 · ${data.target_watts} W`)
         : "未接管";
-      showPolledNotice(`已连接 · ${data.cpu_family} · ${data.cpu_series} · ${controlStatus}`);
+      showPolledNotice(`${data.cpu_family} · ${data.cpu_series} · ${controlStatus}`);
     }
   } catch (error) {
     if (appReady) showPolledNotice(`连接失败：${error.message}`, true);
