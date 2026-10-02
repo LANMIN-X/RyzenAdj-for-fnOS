@@ -4,9 +4,9 @@
 
 ## 应用截图
 
-![功耗控制界面](screenshots/power-control-update-available.png)
+![功耗控制界面](screenshots/power-control-1.0.7.png)
 
-![功耗上限应用成功状态](screenshots/power-control-applied.png)
+![功耗上限应用成功状态](screenshots/power-control-applied-1.0.7.png)
 
 ## 安装与使用
 
