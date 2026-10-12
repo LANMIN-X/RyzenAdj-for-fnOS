@@ -13,6 +13,7 @@ class BoostControlTests(unittest.TestCase):
             path = Path(directory) / 'boost'
             app = powerd.PowerApp.__new__(powerd.PowerApp)
             app.io_lock = threading.Lock()
+            app._save_control_state = Mock()
             app._log_command = Mock()
             with patch.object(powerd, 'BOOST_PATH', path):
                 self.assertIsNone(app.boost_status()['enabled'])

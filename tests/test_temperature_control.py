@@ -10,6 +10,7 @@ class TemperatureControlTests(unittest.TestCase):
         app = powerd.PowerApp.__new__(powerd.PowerApp)
         app.control_enabled = True
         app.io_lock = threading.Lock()
+        app._save_control_state = Mock()
         app._read_info = Mock(return_value={'cpu_family': 'Cezanne', 'temperature_limit': 92})
         app._run = Mock(return_value='| STAPM LIMIT | 15 |\n| PPT LIMIT FAST | 15 |\n| PPT LIMIT SLOW | 15 |\n| STAPM VALUE | 4 |\n| PPT VALUE FAST | 5 |\n| PPT VALUE SLOW | 4 |\n| THM VALUE CORE | 45 |\n| THM LIMIT CORE | 80.001 |')
         for value in (True, None, float('nan'), 19, 96):

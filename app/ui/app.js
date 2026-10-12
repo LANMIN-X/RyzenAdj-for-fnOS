@@ -326,8 +326,8 @@ async function refresh() {
       }
     }
     setTestStatus(data.test);
-    if (data.baseline_error) {
-      showPolledNotice(data.baseline_error, true);
+    if (data.startup_error || data.baseline_error) {
+      showPolledNotice(data.startup_error || data.baseline_error, true);
     } else {
       const controlStatus = data.control_enabled
         ? (data.separate_limits ? "独立功耗墙接管中" : `功耗接管中 · ${data.target_watts} W`)

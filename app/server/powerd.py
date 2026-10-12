@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 APP = "ryzen-power-control"
-VERSION = "1.0.8"
+VERSION = "1.0.9"
 BOOST_PATH = Path("/sys/devices/system/cpu/cpufreq/boost")
 MIN_WATTS = 2
 MAX_WATTS = 200
@@ -130,6 +130,9 @@ class PowerApp:
         self.control_enabled = False
         self.startup_enabled = False
         self.target_watts = None
+        self.target_temperature = None
+        self.target_boost = None
+        self.startup_error = None
         self.target_limits = None
         self.separate_limits = False
         self.test_active = False
@@ -161,19 +164,24 @@ class PowerApp:
         self._load_control_state()
         if self.control_enabled:
             try:
-                info = self._read_info()
-            except PowerError:
+                self._apply_saved_settings(self._read_info())
+            except (PowerError, OSError) as exc:
                 self.control_enabled = False
-                self._save_control_state()
-                return
-            if not self._supported_limit_keys(info):
-                self.control_enabled = False
-                self._save_control_state()
-                return
-            supported_keys = self._supported_limit_keys(info)
-            if max(self.target_limits[key] for key in supported_keys) > self._limit_range(info)["max"]:
-                raise PowerError("保存的功耗目标超过固件报告范围")
-            self._apply_limits({key: self.target_limits[key] for key in supported_keys})
+                self.startup_error = "启动时应用保存的设置失败：%s；保存的目标已保留，可重新开启接管重试。" % exc
+                self._log_command(None, error=self.startup_error, event="startup settings")
+
+    def _apply_saved_settings(self, info):
+        self._require_supported_cpu(info)
+        supported_keys = self._supported_limit_keys(info)
+        maximum = self._limit_range(info)["max"]
+        if any(not MIN_WATTS <= self.target_limits[key] <= maximum for key in supported_keys):
+            raise PowerError("保存的功耗目标超过当前设备范围")
+        self._apply_limits({key: self.target_limits[key] for key in supported_keys})
+        if self.target_temperature is not None:
+            self.set_temperature(self.target_temperature, persist=False)
+        if self.target_boost is not None:
+            self.set_boost(self.target_boost, persist=False)
+        self.startup_error = None
 
     @staticmethod
     def _power_limit_support(cpu_family):
@@ -535,6 +543,8 @@ class PowerApp:
             "watts": self.target_watts,
             "limits": self.target_limits,
             "separate_limits": self.separate_limits,
+            "temperature": self.target_temperature,
+            "boost": self.target_boost,
         }, ensure_ascii=False).encode("utf-8")
         temporary = self.control_path.with_suffix(".tmp")
         temporary.write_bytes(payload)
@@ -555,6 +565,13 @@ class PowerApp:
             watts = payload.get("watts")
             limits = payload.get("limits")
             separate = payload.get("separate_limits", False)
+            temperature = payload.get("temperature")
+            boost = payload.get("boost")
+            if temperature is not None and (isinstance(temperature, bool) or not isinstance(temperature, (int, float))
+                    or not math.isfinite(temperature) or not 20 <= temperature <= 95):
+                raise ValueError("温度目标无效")
+            if boost is not None and not isinstance(boost, bool):
+                raise ValueError("睿频目标无效")
             if not isinstance(enabled, bool):
                 raise ValueError("enabled 无效")
             if limits is None and watts is not None:
@@ -570,6 +587,8 @@ class PowerApp:
                 raise ValueError("separate_limits 无效")
             if (enabled or startup_enabled) and limits is None:
                 raise ValueError("启用状态缺少功耗目标")
+            self.target_temperature = temperature
+            self.target_boost = boost
             self.startup_enabled = startup_enabled
             same_boot = self.boot_id is not None and payload.get("boot_id") == self.boot_id
             self.control_enabled = enabled if same_boot else startup_enabled
@@ -628,10 +647,17 @@ class PowerApp:
             ))
         with self.io_lock:
             self._run(args + ["--info"])
-            actual = parse_info(self._run(["--info"]))["limits"]
+            deadline = time.monotonic() + 3
+            while True:
+                actual = parse_info(self._run(["--info"]))["limits"]
+                if all(abs(actual[key] - expected) <= 0.01 for key, expected in limits.items()):
+                    return actual
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.25)
         for key, expected in limits.items():
             if abs(actual[key] - expected) > 0.01:
-                detail = "%s 设置未生效：期望 %.3fW，实际读回 %.3fW；固件可能拒绝、截断或覆盖设置。" % (
+                detail = "%s 设置未生效：等待 3 秒后期望 %.3fW，实际读回 %.3fW；固件可能拒绝、截断或覆盖设置。" % (
                     LIMIT_FIELDS[key], expected, actual[key]
                 )
                 self._log_command(None, error=detail, event="power limit readback verification")
@@ -689,7 +715,7 @@ class PowerApp:
         self._save_control_state()
         return actual
 
-    def set_temperature(self, value):
+    def set_temperature(self, value, persist=True):
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 20 <= value <= 95:
             raise PowerError("温度上限需为 20–95°C")
         if not self.control_enabled:
@@ -704,12 +730,16 @@ class PowerApp:
             while True:
                 actual = parse_info(self._run(["--info"]))["temperature_limit"]
                 if actual is not None and abs(actual - round(value)) < 0.1:
-                    return actual
+                    break
                 if time.monotonic() >= deadline:
                     detail = "温度上限设置未生效：期望 %s°C，实际读回 %s°C" % (round(value), actual)
                     self._log_command(None, error=detail, event="temperature readback verification")
                     raise PowerError(detail)
                 time.sleep(0.25)
+        if persist:
+            self.target_temperature = round(value)
+            self._save_control_state()
+        return actual
 
     def restore_temperature(self):
         if self.baseline_temperature is None:
@@ -728,7 +758,7 @@ class PowerApp:
             return {"enabled": None, "error": "系统返回了无效的睿频状态"}
         return {"enabled": value == "1", "error": None}
 
-    def set_boost(self, enabled):
+    def set_boost(self, enabled, persist=True):
         if not isinstance(enabled, bool):
             raise PowerError("睿频状态无效")
         with self.io_lock:
@@ -746,7 +776,10 @@ class PowerApp:
                 self._log_command(None, error=detail, event="CPU boost update")
                 raise PowerError(detail)
             self._log_command(None, stdout="enabled: %s" % enabled, event="CPU boost update")
-            return actual["enabled"]
+        if persist:
+            self.target_boost = enabled
+            self._save_control_state()
+        return actual["enabled"]
 
     def set_startup(self, enabled):
         if not isinstance(enabled, bool):
@@ -789,12 +822,16 @@ class PowerApp:
                 raise PowerError("已保存的功耗值超出当前设备范围")
             self.control_enabled = True
             try:
-                self._apply_limits({key: self.target_limits[key] for key in supported_keys})
+                self._apply_saved_settings(info)
             except Exception:
                 self.control_enabled = False
                 raise
             return self.control_enabled
+        if self.target_temperature is not None and self.baseline_temperature is None:
+            raise PowerError("尚未记录温度恢复基准，无法关闭接管并恢复温度")
         self.restore(persist=False)
+        if self.target_temperature is not None:
+            self.set_temperature(self.baseline_temperature, persist=False)
         self.control_enabled = False
         self._save_control_state()
         return self.control_enabled
@@ -806,10 +843,10 @@ class PowerApp:
         self._require_supported_cpu(info)
         supported_keys = self._supported_limit_keys(info)
         actual = self._set_limits({key: self.baseline[key] for key in supported_keys})
-        self.target_limits = actual
-        self.target_watts = self._common_watts({key: actual[key] for key in supported_keys})
-        self.separate_limits = self.target_watts is None
         if persist:
+            self.target_limits = actual
+            self.target_watts = self._common_watts({key: actual[key] for key in supported_keys})
+            self.separate_limits = self.target_watts is None
             self._save_control_state()
         return actual
 
@@ -976,6 +1013,7 @@ class PowerApp:
             "limits": current["limits"],
             "baseline": self.baseline,
             "baseline_error": self.baseline_error,
+            "startup_error": self.startup_error,
             "control_enabled": self.control_enabled,
             "startup_enabled": self.startup_enabled,
             "target_watts": self.target_watts,
